@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "kistenindex",
+	"version": "${version}",
+	"name": "Kisten-Index",
+	"description": "Merkt sich den Inhalt geöffneter Kisten und macht ihn per GUI durchsuchbar.",
+	"authors": [
+		"TobiTroll"
+	],
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.kistenindex.KistenIndexClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
