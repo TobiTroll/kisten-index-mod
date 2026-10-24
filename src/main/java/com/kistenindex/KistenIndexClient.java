@@ -49,9 +49,9 @@ public class KistenIndexClient implements ClientModInitializer {
 		KeyMapping.Category category = KeyMapping.Category.register(
 				Identifier.fromNamespaceAndPath("kistenindex", "main"));
 
+		// Seit 26.3 (SDL): Taste direkt als Scancode-Konstante, ohne InputConstants.Type
 		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.kistenindex.open",
-				InputConstants.Type.KEYSYM,
 				InputConstants.KEY_K,
 				category));
 
