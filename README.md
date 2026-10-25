@@ -1,13 +1,20 @@
 # Kisten-Index
 
-Fabric-Mod für Minecraft 26.3. Die Mod merkt sich den Inhalt jeder Kiste, jedes Fasses und jeder Shulkerbox, die du öffnest, und lässt dich alle bekannten Lagerorte per GUI durchsuchen.
+Fabric-Mod für Minecraft 26.3. Die Mod merkt sich den Inhalt jedes Containers, den du öffnest, und lässt dich alle bekannten Lagerorte per GUI durchsuchen.
+
+## Unterstützte Container
+
+Kiste, Redstone-Kiste, Endertruhe, Fass, Shulkerbox, Spender, Werfer, Ofen, Hochofen, Räucherofen. Liegen Shulkerboxen in einem Container, werden auch ihre Inhalte erfasst.
 
 ## Bedienung
 
 - Taste **K** (in den Steuerungs-Einstellungen änderbar) öffnet den Kisten-Index.
-- Suchfeld: Item-Name tippen, die Liste filtert sofort. Jeder Treffer zeigt das Item-Icon.
-- Filter: Dimension und Containertyp.
-- Klick auf einen Treffer markiert den Container: Ein gelber Rahmen mit Entfernung erscheint auf dem Bildschirm, auch durch Wände. Liegt der Container außerhalb des Bildes, zeigt ein Marker am Bildschirmrand in seine Richtung. Die Koordinaten stehen zusätzlich im Chat.
+- **Suche:** Jedes Wort muss passen, im Item-Namen, in den Verzauberungen oder im Namen der Shulkerbox. Beispiele: `diamant`, `schärfe`, `schwert schärfe`. Mit `<30%` oder `>80%` filterst du nach restlicher Haltbarkeit, z. B. `spitzhacke <30%`.
+- **Filter:** Dimension, Containertyp und Shulker-Inhalt (an/aus).
+- **Sortierung:** nach Entfernung, Menge oder Alter (zuletzt gescannt). Angepinnte Container stehen immer oben.
+- **Tooltip:** Mauszeiger auf einem Treffer zeigt Verzauberungen, Haltbarkeit, Fundort und wann der Container zuletzt gesehen wurde.
+- **Linksklick** auf einen Treffer markiert den Container: gelber Rahmen mit Entfernung auf dem Bildschirm, auch durch Wände. Außerhalb des Bildes zeigt ein Marker am Rand die Richtung.
+- **Rechtsklick** auf einen Treffer öffnet ein Menü: Markieren, Anpinnen bzw. Pin entfernen, Container vergessen.
 - Die Markierung verschwindet, wenn du den Container öffnest, oder mit der Taste **J** (änderbar).
 - Beim erneuten Öffnen eines Containers wird sein Eintrag aktualisiert.
 

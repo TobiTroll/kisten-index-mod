@@ -16,22 +16,65 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Speichert und durchsucht die erfassten Container, getrennt nach Welt bzw. Server. */
 public final class ChestStore {
+	public enum SortMode {
+		DISTANCE("Entfernung"), AMOUNT("Menge"), AGE("Alter");
+
+		public final String label;
+
+		SortMode(String label) {
+			this.label = label;
+		}
+
+		public SortMode next() {
+			return values()[(ordinal() + 1) % values().length];
+		}
+	}
+
 	public static final class ItemInfo {
 		public String id;
 		public String name;
 		public int count;
+		/** Verzauberungen als Text, z. B. "Schärfe V, Haltbarkeit III"; leer ohne Verzauberung. */
+		public String enchants;
+		public int damage;
+		/** 0, wenn das Item keine Haltbarkeit hat. */
+		public int maxDamage;
+		/** Name der Shulkerbox, in der das Item liegt; null, wenn es direkt im Container liegt. */
+		public String container;
 
 		public ItemInfo() {
 		}
 
-		public ItemInfo(String id, String name, int count) {
+		public ItemInfo(String id, String name, int count, String enchants, int damage, int maxDamage,
+				String container) {
 			this.id = id;
 			this.name = name;
 			this.count = count;
+			this.enchants = enchants;
+			this.damage = damage;
+			this.maxDamage = maxDamage;
+			this.container = container;
+		}
+
+		/** Restliche Haltbarkeit in Prozent oder -1, wenn das Item keine Haltbarkeit hat. */
+		public int durabilityPercent() {
+			if (maxDamage <= 0) {
+				return -1;
+			}
+			return Math.max(0, (maxDamage - damage) * 100 / maxDamage);
+		}
+
+		public boolean sameAs(ItemInfo other) {
+			return Objects.equals(id, other.id) && Objects.equals(name, other.name) && count == other.count
+					&& Objects.equals(enchants, other.enchants) && damage == other.damage
+					&& maxDamage == other.maxDamage && Objects.equals(container, other.container);
 		}
 	}
 
@@ -42,6 +85,7 @@ public final class ChestStore {
 		public int z;
 		public String type;
 		public long updated;
+		public boolean pinned;
 		public List<ItemInfo> items = new ArrayList<>();
 	}
 
@@ -51,6 +95,7 @@ public final class ChestStore {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final Type LIST_TYPE = new TypeToken<List<Entry>>() {
 	}.getType();
+	private static final Pattern DURABILITY = Pattern.compile("^([<>])(\\d{1,3})%?$");
 
 	private static List<Entry> entries = new ArrayList<>();
 	private static String loadedKey = null;
@@ -119,9 +164,7 @@ public final class ChestStore {
 			return false;
 		}
 		for (int i = 0; i < a.size(); i++) {
-			ItemInfo x = a.get(i);
-			ItemInfo y = b.get(i);
-			if (!x.id.equals(y.id) || x.count != y.count) {
+			if (!a.get(i).sameAs(b.get(i))) {
 				return false;
 			}
 		}
@@ -158,13 +201,71 @@ public final class ChestStore {
 		save();
 	}
 
-	/** Sucht Items (Name oder ID enthält den Suchtext), sortiert nach Entfernung. */
-	public static synchronized List<Hit> search(Minecraft client, String query, String dimFilter, String typeFilter) {
+	/** Schaltet die Markierung "angepinnt" für einen Container um. */
+	public static synchronized void togglePinned(Minecraft client, Entry entry) {
+		if (ensureLoaded(client)) {
+			entry.pinned = !entry.pinned;
+			save();
+		}
+	}
+
+	/** Vergisst einen Container, er taucht erst nach erneutem Öffnen wieder im Index auf. */
+	public static synchronized void remove(Minecraft client, Entry entry) {
+		if (ensureLoaded(client) && entries.remove(entry)) {
+			save();
+		}
+	}
+
+	private static String nullToEmpty(String text) {
+		return text == null ? "" : text;
+	}
+
+	private static String haystack(ItemInfo item) {
+		return (nullToEmpty(item.name) + " " + nullToEmpty(item.id) + " " + nullToEmpty(item.enchants) + " "
+				+ nullToEmpty(item.container)).toLowerCase(Locale.ROOT);
+	}
+
+	/**
+	 * Jedes Wort der Suche muss passen: im Namen, in der ID, in den Verzauberungen oder im Shulker-Namen. Ein
+	 * Wort wie "<30%" oder ">80%" filtert nach restlicher Haltbarkeit.
+	 */
+	private static boolean matches(ItemInfo item, List<String> tokens) {
+		for (String token : tokens) {
+			Matcher m = DURABILITY.matcher(token);
+			if (m.matches()) {
+				int pct = item.durabilityPercent();
+				if (pct < 0) {
+					return false;
+				}
+				int limit = Integer.parseInt(m.group(2));
+				boolean ok = m.group(1).equals("<") ? pct < limit : pct > limit;
+				if (!ok) {
+					return false;
+				}
+				continue;
+			}
+			if (!haystack(item).contains(token)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Sucht Items und sortiert die Treffer. Angepinnte Container stehen immer oben. */
+	public static synchronized List<Hit> search(Minecraft client, String query, String dimFilter, String typeFilter,
+			boolean includeNested, SortMode sort) {
 		List<Hit> hits = new ArrayList<>();
 		if (!ensureLoaded(client)) {
 			return hits;
 		}
-		String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+		List<String> tokens = new ArrayList<>();
+		if (query != null) {
+			for (String token : query.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
+				if (!token.isEmpty()) {
+					tokens.add(token);
+				}
+			}
+		}
 		for (Entry e : entries) {
 			if (!dimFilter.isEmpty() && !dimFilter.equals(e.dimension)) {
 				continue;
@@ -173,8 +274,10 @@ public final class ChestStore {
 				continue;
 			}
 			for (ItemInfo item : e.items) {
-				if (q.isEmpty() || item.name.toLowerCase(Locale.ROOT).contains(q)
-						|| item.id.toLowerCase(Locale.ROOT).contains(q)) {
+				if (!includeNested && item.container != null) {
+					continue;
+				}
+				if (matches(item, tokens)) {
 					hits.add(new Hit(e, item));
 				}
 			}
@@ -195,16 +298,23 @@ public final class ChestStore {
 			pz = 0;
 			pdim = null;
 		}
-		hits.sort(Comparator.comparingDouble(h -> {
-			Entry e = h.entry();
-			if (pdim == null || !pdim.equals(e.dimension)) {
-				return 1.0e18;
-			}
-			double dx = e.x - px;
-			double dy = e.y - py;
-			double dz = e.z - pz;
-			return dx * dx + dy * dy + dz * dz;
-		}));
+
+		Comparator<Hit> order = switch (sort) {
+			case AMOUNT -> Comparator.comparingInt((Hit h) -> h.item().count).reversed();
+			case AGE -> Comparator.comparingLong((Hit h) -> h.entry().updated).reversed();
+			default -> Comparator.comparingDouble((Hit h) -> {
+				Entry e = h.entry();
+				if (pdim == null || !pdim.equals(e.dimension)) {
+					return 1.0e18;
+				}
+				double dx = e.x - px;
+				double dy = e.y - py;
+				double dz = e.z - pz;
+				return dx * dx + dy * dy + dz * dz;
+			});
+		};
+		Comparator<Hit> pinnedFirst = Comparator.comparing((Hit h) -> !h.entry().pinned);
+		hits.sort(pinnedFirst.thenComparing(order));
 		return hits;
 	}
 
@@ -232,6 +342,11 @@ public final class ChestStore {
 			case "trapped_chest" -> "Redstone-Kiste";
 			case "barrel" -> "Fass";
 			case "ender_chest" -> "Endertruhe";
+			case "dispenser" -> "Spender";
+			case "dropper" -> "Werfer";
+			case "furnace" -> "Ofen";
+			case "blast_furnace" -> "Hochofen";
+			case "smoker" -> "Räucherofen";
 			default -> "Container";
 		};
 	}
@@ -246,5 +361,20 @@ public final class ChestStore {
 			case "minecraft:the_end" -> "Ende";
 			default -> dimensionId;
 		};
+	}
+
+	/** Zeit seit dem letzten Scan als kurzer Text. */
+	public static String ageText(long updated) {
+		long seconds = Math.max(0, (System.currentTimeMillis() - updated) / 1000);
+		if (seconds < 60) {
+			return "gerade eben";
+		}
+		if (seconds < 3600) {
+			return "vor " + (seconds / 60) + " Min.";
+		}
+		if (seconds < 86400) {
+			return "vor " + (seconds / 3600) + " Std.";
+		}
+		return "vor " + (seconds / 86400) + " Tg.";
 	}
 }

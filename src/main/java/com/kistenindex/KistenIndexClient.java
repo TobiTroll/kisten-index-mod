@@ -1,6 +1,7 @@
 package com.kistenindex;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -12,16 +13,23 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.AbstractFurnaceMenu;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.DispenserMenu;
 import net.minecraft.world.inventory.ShulkerBoxMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,13 +87,15 @@ public class KistenIndexClient implements ClientModInitializer {
 			return InteractionResult.PASS;
 		});
 
-		// Erkennt geöffnete Kisten, Fässer und Shulkerboxen.
+		// Erkennt geöffnete Kisten, Fässer, Shulkerboxen, Spender, Werfer und Öfen.
 		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
 			if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) {
 				return;
 			}
 			AbstractContainerMenu menu = containerScreen.getMenu();
-			if (!(menu instanceof ChestMenu) && !(menu instanceof ShulkerBoxMenu)) {
+			boolean supported = menu instanceof ChestMenu || menu instanceof ShulkerBoxMenu
+					|| menu instanceof DispenserMenu || menu instanceof AbstractFurnaceMenu;
+			if (!supported) {
 				return;
 			}
 			if (lastPos == null || System.currentTimeMillis() - lastClickTime > 5000) {
@@ -134,7 +144,7 @@ public class KistenIndexClient implements ClientModInitializer {
 		});
 	}
 
-	/** Liest den Inhalt des geöffneten Containers und speichert ihn im Index. */
+	/** Liest den Inhalt des geöffneten Containers (inklusive Shulkerbox-Inhalten) und speichert ihn im Index. */
 	private static void snapshot(Minecraft client) {
 		if (activeScreen == null || activePos == null) {
 			return;
@@ -148,16 +158,50 @@ public class KistenIndexClient implements ClientModInitializer {
 			if (stack.isEmpty()) {
 				continue;
 			}
-			String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-			String name = stack.getHoverName().getString();
-			int count = stack.getCount();
-			ChestStore.ItemInfo existing = merged.get(id);
-			if (existing == null) {
-				merged.put(id, new ChestStore.ItemInfo(id, name, count));
-			} else {
-				existing.count += count;
+			addStack(merged, stack, null);
+
+			// Liegt eine Shulkerbox im Container, werden ihre Inhalte mit erfasst.
+			ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
+			if (contents != null) {
+				String shulkerName = stack.getHoverName().getString();
+				contents.nonEmptyItemCopyStream().forEach(inner -> addStack(merged, inner, shulkerName));
 			}
 		}
 		ChestStore.update(client, activeDim, activePos, activeBlock, new ArrayList<>(merged.values()));
+	}
+
+	private static void addStack(Map<String, ChestStore.ItemInfo> merged, ItemStack stack, String container) {
+		String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+		String name = stack.getHoverName().getString();
+		String enchants = enchantments(stack);
+		int maxDamage = stack.isDamageableItem() ? stack.getMaxDamage() : 0;
+		int damage = maxDamage > 0 ? stack.getDamageValue() : 0;
+		String key = id + "|" + name + "|" + enchants + "|" + damage + "|" + (container == null ? "" : container);
+		ChestStore.ItemInfo existing = merged.get(key);
+		if (existing == null) {
+			merged.put(key, new ChestStore.ItemInfo(id, name, stack.getCount(), enchants, damage, maxDamage, container));
+		} else {
+			existing.count += stack.getCount();
+		}
+	}
+
+	/** Verzauberungen (auch von Zauberbüchern) als Text, z. B. "Schärfe V, Haltbarkeit III". */
+	private static String enchantments(ItemStack stack) {
+		StringBuilder sb = new StringBuilder();
+		appendEnchantments(sb, stack.get(DataComponents.ENCHANTMENTS));
+		appendEnchantments(sb, stack.get(DataComponents.STORED_ENCHANTMENTS));
+		return sb.toString();
+	}
+
+	private static void appendEnchantments(StringBuilder sb, ItemEnchantments enchantments) {
+		if (enchantments == null || enchantments.isEmpty()) {
+			return;
+		}
+		for (Object2IntMap.Entry<Holder<Enchantment>> entry : enchantments.entrySet()) {
+			if (sb.length() > 0) {
+				sb.append(", ");
+			}
+			sb.append(Enchantment.getFullname(entry.getKey(), entry.getIntValue()).getString());
+		}
 	}
 }
