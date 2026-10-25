@@ -4,6 +4,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.client.KeyMapping;
@@ -11,6 +13,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
@@ -30,6 +33,7 @@ public class KistenIndexClient implements ClientModInitializer {
 	public static final Logger LOGGER = LoggerFactory.getLogger("kistenindex");
 
 	private static KeyMapping openKey;
+	private static KeyMapping clearKey;
 
 	// Zuletzt angeklickter Block (wird beim Öffnen eines Containers gebraucht)
 	private static BlockPos lastPos;
@@ -49,11 +53,19 @@ public class KistenIndexClient implements ClientModInitializer {
 		KeyMapping.Category category = KeyMapping.Category.register(
 				Identifier.fromNamespaceAndPath("kistenindex", "main"));
 
-		// Seit 26.3 (SDL): Taste direkt als Scancode-Konstante, ohne InputConstants.Type
+		// Seit 26.3 (SDL): Taste direkt als Konstante, ohne InputConstants.Type
 		openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.kistenindex.open",
 				InputConstants.KEY_K,
 				category));
+		clearKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.kistenindex.clear",
+				InputConstants.KEY_J,
+				category));
+
+		// Markierung des gewählten Containers auf dem HUD
+		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT,
+				Identifier.fromNamespaceAndPath("kistenindex", "highlight"), HighlightHud::extract);
 
 		// Merkt sich, welchen Block der Spieler zuletzt angeklickt hat.
 		UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
@@ -85,6 +97,15 @@ public class KistenIndexClient implements ClientModInitializer {
 			activeBlock = lastBlock;
 			tickCounter = 0;
 
+			// Markierung entfernen, sobald der markierte Container geöffnet wird (Doppelkisten: ±1 Block)
+			HighlightState.Target marked = HighlightState.get();
+			if (marked != null && marked.dimension().equals(activeDim)
+					&& Math.abs(marked.x() - activePos.getX()) <= 1
+					&& Math.abs(marked.z() - activePos.getZ()) <= 1
+					&& marked.y() == activePos.getY()) {
+				HighlightState.clear();
+			}
+
 			ScreenEvents.remove(screen).register(s -> {
 				snapshot(client);
 				if (activeScreen == containerScreen) {
@@ -97,6 +118,14 @@ public class KistenIndexClient implements ClientModInitializer {
 			while (openKey.consumeClick()) {
 				if (client.player != null) {
 					client.gui.setScreen(new IndexScreen());
+				}
+			}
+			while (clearKey.consumeClick()) {
+				if (HighlightState.get() != null) {
+					HighlightState.clear();
+					if (client.player != null) {
+						client.player.sendSystemMessage(Component.literal("Kisten-Index: Markierung entfernt"));
+					}
 				}
 			}
 			if (activeScreen != null && ++tickCounter % 5 == 0) {

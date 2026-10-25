@@ -5,9 +5,10 @@ Fabric-Mod für Minecraft 26.3. Die Mod merkt sich den Inhalt jeder Kiste, jedes
 ## Bedienung
 
 - Taste **K** (in den Steuerungs-Einstellungen änderbar) öffnet den Kisten-Index.
-- Suchfeld: Item-Name tippen, die Liste filtert sofort.
+- Suchfeld: Item-Name tippen, die Liste filtert sofort. Jeder Treffer zeigt das Item-Icon.
 - Filter: Dimension und Containertyp.
-- Klick auf einen Treffer schreibt die Koordinaten in den Chat.
+- Klick auf einen Treffer markiert den Container: Ein gelber Rahmen mit Entfernung erscheint auf dem Bildschirm, auch durch Wände. Liegt der Container außerhalb des Bildes, zeigt ein Marker am Bildschirmrand in seine Richtung. Die Koordinaten stehen zusätzlich im Chat.
+- Die Markierung verschwindet, wenn du den Container öffnest, oder mit der Taste **J** (änderbar).
 - Beim erneuten Öffnen eines Containers wird sein Eintrag aktualisiert.
 
 ## Speicherort

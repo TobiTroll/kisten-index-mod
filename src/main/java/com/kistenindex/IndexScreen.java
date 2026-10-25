@@ -5,17 +5,25 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Die Such-GUI des Kisten-Index. */
 public class IndexScreen extends Screen {
 	private static final int ROWS = 8;
 	private static final int WIDTH = 320;
+	private static final int ICON_GUTTER = 24;
 	private static final List<String> TYPE_FILTERS = List.of("", "Kiste", "Redstone-Kiste", "Fass", "Shulkerbox",
 			"Endertruhe");
+	private static final Map<String, ItemStack> STACKS = new HashMap<>();
 
 	private String query = "";
 	private String dimFilter = "";
@@ -27,16 +35,25 @@ public class IndexScreen extends Screen {
 	private Button prevButton;
 	private Button nextButton;
 	private final List<Button> rowButtons = new ArrayList<>();
+	private final List<ItemStack> rowStacks = new ArrayList<>();
 	private List<ChestStore.Hit> hits = new ArrayList<>();
 
 	public IndexScreen() {
 		super(Component.literal("Kisten-Index"));
 	}
 
+	private static ItemStack stackFor(String id) {
+		return STACKS.computeIfAbsent(id, key -> {
+			Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(key));
+			return new ItemStack(item);
+		});
+	}
+
 	@Override
 	protected void init() {
 		left = this.width / 2 - WIDTH / 2;
 		rowButtons.clear();
+		rowStacks.clear();
 
 		searchBox = new EditBox(this.font, left, 28, WIDTH, 20, Component.literal("Suche"));
 		searchBox.setHint(Component.literal("Item suchen, z. B. Diamant"));
@@ -109,6 +126,7 @@ public class IndexScreen extends Screen {
 			removeWidget(b);
 		}
 		rowButtons.clear();
+		rowStacks.clear();
 
 		hits = ChestStore.search(Minecraft.getInstance(), query, dimFilter, typeFilter);
 		int maxPage = Math.max(0, (hits.size() - 1) / ROWS);
@@ -123,8 +141,9 @@ public class IndexScreen extends Screen {
 		for (int i = 0; i < ROWS && start + i < hits.size(); i++) {
 			ChestStore.Hit hit = hits.get(start + i);
 			Button row = Button.builder(Component.literal(describe(hit)), b -> select(hit))
-					.bounds(left, 80 + i * 22, WIDTH, 20).build();
+					.bounds(left + ICON_GUTTER, 80 + i * 22, WIDTH - ICON_GUTTER, 20).build();
 			rowButtons.add(row);
+			rowStacks.add(stackFor(hit.item().id));
 			addRenderableWidget(row);
 		}
 		prevButton.active = page > 0;
@@ -137,14 +156,17 @@ public class IndexScreen extends Screen {
 				+ ChestStore.dimensionLabel(e.dimension) + " " + e.x + " " + e.y + " " + e.z;
 	}
 
-	/** Klick auf einen Treffer: Koordinaten in den Chat schreiben und die GUI schließen. */
+	/** Klick auf einen Treffer: Container markieren, Koordinaten in den Chat schreiben, GUI schließen. */
 	private void select(ChestStore.Hit hit) {
 		Minecraft mc = Minecraft.getInstance();
 		ChestStore.Entry e = hit.entry();
+		HighlightState.set(new HighlightState.Target(e.dimension, e.x, e.y, e.z,
+				hit.item().count + "x " + hit.item().name));
 		if (mc.player != null) {
 			mc.player.sendSystemMessage(Component.literal("Kisten-Index: " + hit.item().count + "x "
 					+ hit.item().name + " in " + ChestStore.typeLabel(e.type) + " bei " + e.x + " / " + e.y + " / "
-					+ e.z + " (" + ChestStore.dimensionLabel(e.dimension) + ")"));
+					+ e.z + " (" + ChestStore.dimensionLabel(e.dimension)
+					+ "). Markiert, entfernen mit der Markierungs-Taste (Standard J)."));
 		}
 		this.onClose();
 	}
@@ -152,6 +174,11 @@ public class IndexScreen extends Screen {
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
 		super.extractRenderState(graphics, mouseX, mouseY, delta);
+
+		// Item-Icons links neben den Treffern
+		for (int i = 0; i < rowStacks.size(); i++) {
+			graphics.fakeItem(rowStacks.get(i), left + 4, 80 + i * 22 + 2);
+		}
 
 		String title = "Kisten-Index";
 		graphics.text(this.font, title, this.width / 2 - this.font.width(title) / 2, 12, 0xFFFFFFFF, true);
