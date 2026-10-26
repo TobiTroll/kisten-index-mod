@@ -54,11 +54,9 @@ public class IndexScreen extends Screen {
 	private static final int YELLOW = 0xFFF2D06B;
 	private static final int RED = 0xFFF47A7A;
 
-	private static final List<String> TYPE_FILTERS = List.of("", "Kiste", "Redstone-Kiste", "Fass", "Shulkerbox",
-			"Endertruhe", "Spender", "Werfer", "Ofen", "Hochofen", "Räucherofen");
-	private static final List<String> SORT_LABELS = List.of("Entfernung", "Menge", "Alter", "Name A-Z");
-	private static final List<String> CONTAINER_SORT_LABELS = List.of("Entfernung", "Alter", "Name A-Z",
-			"Item-Arten", "Gesamtmenge");
+	// Blöcke für den Typ-Filter; die Bezeichnungen kommen aus ChestStore.typeLabel und ändern sich mit der Sprache.
+	private static final List<String> TYPE_KEYS = List.of("", "chest", "trapped_chest", "barrel", "shulker_box",
+			"ender_chest", "dispenser", "dropper", "furnace", "blast_furnace", "smoker");
 	private static final Map<String, ItemStack> STACKS = new HashMap<>();
 
 	// Bleiben erhalten, wenn die GUI geschlossen und wieder geöffnet wird
@@ -143,6 +141,30 @@ public class IndexScreen extends Screen {
 		});
 	}
 
+	// ---- Sprachabhängige Listen ----
+
+	private static List<String> typeFilters() {
+		List<String> labels = new ArrayList<>();
+		for (String key : TYPE_KEYS) {
+			labels.add(key.isEmpty() ? "" : ChestStore.typeLabel(key));
+		}
+		return labels;
+	}
+
+	private static List<String> sortLabels() {
+		return List.of(Lang.t("Entfernung", "Distance"), Lang.t("Menge", "Amount"), Lang.t("Alter", "Age"),
+				"Name A-Z");
+	}
+
+	private static List<String> containerSortLabels() {
+		return List.of(Lang.t("Entfernung", "Distance"), Lang.t("Alter", "Age"), "Name A-Z",
+				Lang.t("Item-Arten", "Item types"), Lang.t("Gesamtmenge", "Total amount"));
+	}
+
+	private static String modName() {
+		return Lang.t("Kisten-Index", "Chest Index");
+	}
+
 	@Override
 	protected void init() {
 		rowsPerPage = Math.max(3, Math.min(8, (this.height - 136 - 16) / ROW_PITCH));
@@ -173,7 +195,7 @@ public class IndexScreen extends Screen {
 		searchBox = new EditBox(this.font, searchRect.x() + 28, searchRect.y() + 8, searchRect.w() - 38, 10,
 				Component.literal("Suche"));
 		searchBox.setBordered(false);
-		searchBox.setHint(Component.literal("Suchen ..."));
+		searchBox.setHint(Component.literal(Lang.t("Suchen ...", "Search ...")));
 		searchBox.setMaxLength(64);
 		searchBox.setValue(query);
 		searchBox.setResponder(text -> {
@@ -302,10 +324,14 @@ public class IndexScreen extends Screen {
 		HighlightState.set(new HighlightState.Target(e.dimension, e.x, e.y, e.z,
 				hit.item().count + "x " + hit.item().name));
 		if (mc.player != null) {
-			mc.player.sendSystemMessage(Component.literal("Kisten-Index: " + hit.item().count + "x "
-					+ hit.item().name + " in " + ChestStore.typeLabel(e.type) + " bei " + e.x + " / " + e.y + " / "
-					+ e.z + " (" + ChestStore.dimensionLabel(e.dimension)
-					+ "). Markiert, entfernen mit der Markierungs-Taste (Standard J)."));
+			String what = hit.item().count + "x " + hit.item().name + " ";
+			String type = ChestStore.typeLabel(e.type);
+			String coords = e.x + " / " + e.y + " / " + e.z + " (" + ChestStore.dimensionLabel(e.dimension) + ")";
+			mc.player.sendSystemMessage(Component.literal(Lang.t(
+					"Kisten-Index: " + what + "in " + type + " bei " + coords
+							+ ". Markiert, entfernen mit der Markierungs-Taste (Standard J).",
+					"Chest Index: " + what + "in " + type + " at " + coords
+							+ ". Marked, remove it with the marker key (default J).")));
 		}
 		closeGui();
 	}
@@ -316,9 +342,12 @@ public class IndexScreen extends Screen {
 		String name = ChestStore.displayName(e);
 		HighlightState.set(new HighlightState.Target(e.dimension, e.x, e.y, e.z, name));
 		if (mc.player != null) {
-			mc.player.sendSystemMessage(Component.literal("Kisten-Index: " + name + " bei " + e.x + " / " + e.y
-					+ " / " + e.z + " (" + ChestStore.dimensionLabel(e.dimension)
-					+ "). Markiert, entfernen mit der Markierungs-Taste (Standard J)."));
+			String coords = e.x + " / " + e.y + " / " + e.z + " (" + ChestStore.dimensionLabel(e.dimension) + ")";
+			mc.player.sendSystemMessage(Component.literal(Lang.t(
+					"Kisten-Index: " + name + " bei " + coords
+							+ ". Markiert, entfernen mit der Markierungs-Taste (Standard J).",
+					"Chest Index: " + name + " at " + coords
+							+ ". Marked, remove it with the marker key (default J).")));
 		}
 		closeGui();
 	}
@@ -337,6 +366,15 @@ public class IndexScreen extends Screen {
 	private void copyCoordinates(ChestStore.Entry e) {
 		new ClipboardManager().setClipboard(e.x + " " + e.y + " " + e.z);
 		copyFeedbackUntil = System.currentTimeMillis() + 1500;
+	}
+
+	/** Wechselt die Sprache der Mod. Die Typ-Bezeichnungen ändern sich, deshalb wird der Typ-Filter zurückgesetzt. */
+	private void toggleLanguage() {
+		Lang.toggle();
+		typeFilter = "";
+		searchBox.setHint(Component.literal(Lang.t("Suchen ...", "Search ...")));
+		page = 0;
+		refresh();
 	}
 
 	private void switchView(View target) {
@@ -388,7 +426,7 @@ public class IndexScreen extends Screen {
 		dims.addAll(ChestStore.dimensions(mc));
 		List<String> labels = new ArrayList<>();
 		for (String dim : dims) {
-			labels.add(dim.isEmpty() ? "Alle Dimensionen" : ChestStore.dimensionLabel(dim));
+			labels.add(dim.isEmpty() ? Lang.t("Alle Dimensionen", "All dimensions") : ChestStore.dimensionLabel(dim));
 		}
 		openPopup(dimRect.x(), dimRect.y() + dimRect.h() + 2, 130, labels, Math.max(0, dims.indexOf(dimFilter)),
 				index -> {
@@ -399,13 +437,14 @@ public class IndexScreen extends Screen {
 	}
 
 	private void openTypeMenu() {
+		List<String> filters = typeFilters();
 		List<String> labels = new ArrayList<>();
-		for (String type : TYPE_FILTERS) {
-			labels.add(type.isEmpty() ? "Alle Typen" : type);
+		for (String type : filters) {
+			labels.add(type.isEmpty() ? Lang.t("Alle Typen", "All types") : type);
 		}
-		openPopup(typeRect.x(), typeRect.y() + typeRect.h() + 2, 130, labels,
-				Math.max(0, TYPE_FILTERS.indexOf(typeFilter)), index -> {
-					typeFilter = TYPE_FILTERS.get(index);
+		openPopup(typeRect.x(), typeRect.y() + typeRect.h() + 2, 130, labels, Math.max(0, filters.indexOf(typeFilter)),
+				index -> {
+					typeFilter = filters.get(index);
 					page = 0;
 					refresh();
 				});
@@ -414,7 +453,7 @@ public class IndexScreen extends Screen {
 	/** Die Sortieroptionen hängen von der Ansicht ab. */
 	private void openSortMenu() {
 		boolean containers = view == View.CONTAINERS;
-		List<String> labels = containers ? CONTAINER_SORT_LABELS : SORT_LABELS;
+		List<String> labels = containers ? containerSortLabels() : sortLabels();
 		int checked = containers ? containerSortIndex : sortIndex;
 		openPopup(sortRect.x() + sortRect.w() - 130, sortRect.y() + sortRect.h() + 2, 130, labels, checked,
 				index -> {
@@ -428,17 +467,22 @@ public class IndexScreen extends Screen {
 				});
 	}
 
+	/** Einstellungen: Shulker-Inhalt, Sprache, Filter zurücksetzen, Schließen. */
 	private void openGearMenu() {
-		List<String> options = List.of("Shulker-Inhalt: " + (includeNested ? "An" : "Aus"), "Filter zurücksetzen",
-				"Schließen");
-		openPopup(gearRect.x() + gearRect.w() - 150, gearRect.y() + gearRect.h() + 2, 150, options, -1, index -> {
+		List<String> options = List.of(
+				Lang.t("Shulker-Inhalt: ", "Shulker contents: ") + (includeNested ? Lang.t("An", "On") : Lang.t("Aus", "Off")),
+				Lang.t("Sprache: ", "Language: ") + Lang.languageName(),
+				Lang.t("Filter zurücksetzen", "Reset filters"),
+				Lang.t("Schließen", "Close"));
+		openPopup(gearRect.x() + gearRect.w() - 160, gearRect.y() + gearRect.h() + 2, 160, options, -1, index -> {
 			switch (index) {
 				case 0 -> {
 					includeNested = !includeNested;
 					page = 0;
 					refresh();
 				}
-				case 1 -> {
+				case 1 -> toggleLanguage();
+				case 2 -> {
 					dimFilter = "";
 					typeFilter = "";
 					page = 0;
@@ -452,9 +496,10 @@ public class IndexScreen extends Screen {
 
 	private void openContextMenu(int row, double mouseX, double mouseY) {
 		ChestStore.Hit hit = hitForRow(row);
-		List<String> options = List.of("Markieren", hit.entry().pinned ? "Pin entfernen" : "Anpinnen",
-				"Container vergessen");
-		openPopup((int) mouseX, (int) mouseY, 140, options, -1, index -> {
+		List<String> options = List.of(Lang.t("Markieren", "Highlight"),
+				hit.entry().pinned ? Lang.t("Pin entfernen", "Unpin") : Lang.t("Anpinnen", "Pin"),
+				Lang.t("Container vergessen", "Forget container"));
+		openPopup((int) mouseX, (int) mouseY, 150, options, -1, index -> {
 			Minecraft mc = Minecraft.getInstance();
 			switch (index) {
 				case 0 -> select(hit);
@@ -471,9 +516,11 @@ public class IndexScreen extends Screen {
 
 	private void openContainerMenu(int row, double mouseX, double mouseY) {
 		ChestStore.Entry e = containerForRow(row);
-		List<String> options = List.of("Details ansehen", "Markieren", "Umbenennen",
-				e.pinned ? "Pin entfernen" : "Anpinnen", "Container vergessen");
-		openPopup((int) mouseX, (int) mouseY, 150, options, -1, index -> {
+		List<String> options = List.of(Lang.t("Details ansehen", "View details"), Lang.t("Markieren", "Highlight"),
+				Lang.t("Umbenennen", "Rename"),
+				e.pinned ? Lang.t("Pin entfernen", "Unpin") : Lang.t("Anpinnen", "Pin"),
+				Lang.t("Container vergessen", "Forget container"));
+		openPopup((int) mouseX, (int) mouseY, 160, options, -1, index -> {
 			Minecraft mc = Minecraft.getInstance();
 			switch (index) {
 				case 0 -> openDetail(e);
@@ -739,7 +786,7 @@ public class IndexScreen extends Screen {
 			if (active) {
 				roundBox(g, r.x() + 2, r.y() + 2, r.w() - 4, r.h() - 4, ACCENT, TOGGLE_ACTIVE);
 			}
-			String label = i == 0 ? "Items" : "Container";
+			String label = i == 0 ? "Items" : Lang.t("Container", "Containers");
 			int color = active ? TEXT : hovered ? TEXT_SOFT : MUTED;
 			g.text(this.font, label, r.x() + r.w() / 2 - this.font.width(label) / 2, r.y() + 6, color, true);
 		}
@@ -788,11 +835,12 @@ public class IndexScreen extends Screen {
 
 	private static String summaryFor(ChestStore.Entry e) {
 		if (e.items.isEmpty()) {
-			return "Keine Items gespeichert";
+			return Lang.t("Keine Items gespeichert", "No items stored");
 		}
 		int distinct = ChestStore.distinctItems(e);
-		return (distinct == 1 ? "1 Item" : distinct + " verschiedene Items") + "  ·  " + ChestStore.totalCount(e)
-				+ " gesamt";
+		String kinds = distinct == 1 ? Lang.t("1 Item", "1 item")
+				: Lang.t(distinct + " verschiedene Items", distinct + " different items");
+		return kinds + "  ·  " + ChestStore.totalCount(e) + Lang.t(" gesamt", " total");
 	}
 
 	private static List<Component> tooltipFor(ChestStore.Hit hit, boolean withHint) {
@@ -801,21 +849,22 @@ public class IndexScreen extends Screen {
 		List<Component> lines = new ArrayList<>();
 		lines.add(Component.literal(item.count + "x " + item.name));
 		if (item.enchants != null && !item.enchants.isEmpty()) {
-			lines.add(Component.literal("Verzauberungen: " + item.enchants));
+			lines.add(Component.literal(Lang.t("Verzauberungen: ", "Enchantments: ") + item.enchants));
 		}
 		int pct = item.durabilityPercent();
 		if (pct >= 0) {
-			lines.add(Component.literal("Haltbarkeit: " + (item.maxDamage - item.damage) + " / " + item.maxDamage
-					+ " (" + pct + "%)"));
+			lines.add(Component.literal(Lang.t("Haltbarkeit: ", "Durability: ") + (item.maxDamage - item.damage) + " / "
+					+ item.maxDamage + " (" + pct + "%)"));
 		}
 		if (item.container != null) {
 			lines.add(Component.literal("In: " + item.container));
 		}
 		lines.add(Component.literal(ChestStore.typeLabel(e.type) + ", " + ChestStore.dimensionLabel(e.dimension) + " "
 				+ e.x + " " + e.y + " " + e.z));
-		lines.add(Component.literal("Zuletzt gesehen: " + ChestStore.ageText(e.updated)));
+		lines.add(Component.literal(Lang.t("Zuletzt gesehen: ", "Last seen: ") + ChestStore.ageText(e.updated)));
 		if (withHint) {
-			lines.add(Component.literal("Linksklick: Markieren, Rechtsklick: Optionen"));
+			lines.add(Component.literal(Lang.t("Linksklick: Markieren, Rechtsklick: Optionen",
+					"Left click: highlight, right click: options")));
 		}
 		return lines;
 	}
@@ -826,8 +875,9 @@ public class IndexScreen extends Screen {
 		lines.add(Component.literal(ChestStore.typeLabel(e.type) + ", " + ChestStore.dimensionLabel(e.dimension) + " "
 				+ e.x + " " + e.y + " " + e.z));
 		lines.add(Component.literal(summaryFor(e)));
-		lines.add(Component.literal("Zuletzt gesehen: " + ChestStore.ageText(e.updated)));
-		lines.add(Component.literal("Linksklick: Details, Rechtsklick: Optionen"));
+		lines.add(Component.literal(Lang.t("Zuletzt gesehen: ", "Last seen: ") + ChestStore.ageText(e.updated)));
+		lines.add(Component.literal(Lang.t("Linksklick: Details, Rechtsklick: Optionen",
+				"Left click: details, right click: options")));
 		return lines;
 	}
 
@@ -915,13 +965,15 @@ public class IndexScreen extends Screen {
 		info.add(new Seg("  |  ", DIM));
 		info.add(new Seg(e.x + " " + e.y + " " + e.z, TEXT_SOFT));
 		info.add(new Seg("  |  ", DIM));
-		info.add(new Seg("gesehen " + ChestStore.ageText(e.updated), MUTED));
+		info.add(new Seg(Lang.t("gesehen ", "seen ") + ChestStore.ageText(e.updated), MUTED));
 		drawSegments(g, info, x + 22, y + 13, maxX);
 
-		drawSmallButton(g, actionMarkRect, "Hervorheben", true, actionMarkRect.contains(mx, my));
-		String copyLabel = System.currentTimeMillis() < copyFeedbackUntil ? "Kopiert!" : "Koordinaten kopieren";
+		drawSmallButton(g, actionMarkRect, Lang.t("Hervorheben", "Highlight"), true, actionMarkRect.contains(mx, my));
+		String copyLabel = System.currentTimeMillis() < copyFeedbackUntil ? Lang.t("Kopiert!", "Copied!")
+				: Lang.t("Koordinaten kopieren", "Copy coordinates");
 		drawSmallButton(g, actionCopyRect, copyLabel, true, actionCopyRect.contains(mx, my));
-		drawSmallButton(g, actionRenameRect, "Umbenennen", true, actionRenameRect.contains(mx, my));
+		drawSmallButton(g, actionRenameRect, Lang.t("Umbenennen", "Rename"), true,
+				actionRenameRect.contains(mx, my));
 	}
 
 	@Override
@@ -939,9 +991,9 @@ public class IndexScreen extends Screen {
 
 		// Kopfzeile
 		g.fakeItem(stackFor("minecraft:chest"), panel.x() + PAD, panel.y() + 10);
-		g.text(this.font, "§lKisten-Index", panel.x() + PAD + 24, panel.y() + 15, TEXT, true);
+		g.text(this.font, "§l" + modName(), panel.x() + PAD + 24, panel.y() + 15, TEXT, true);
 		if (view == View.DETAIL) {
-			drawSmallButton(g, backRect, "< Zurück", true, backRect.contains(mx, my));
+			drawSmallButton(g, backRect, Lang.t("< Zurück", "< Back"), true, backRect.contains(mx, my));
 		} else {
 			drawViewToggle(g, mx, my);
 		}
@@ -967,11 +1019,14 @@ public class IndexScreen extends Screen {
 			searchBox.extractRenderState(g, mx, my, delta);
 
 			// Filter und Sortierung
-			drawDropdown(g, dimRect, dimFilter.isEmpty() ? "Alle Dimensionen" : ChestStore.dimensionLabel(dimFilter),
+			drawDropdown(g, dimRect,
+					dimFilter.isEmpty() ? Lang.t("Alle Dimensionen", "All dimensions")
+							: ChestStore.dimensionLabel(dimFilter),
 					dimRect.contains(mx, my));
-			drawDropdown(g, typeRect, typeFilter.isEmpty() ? "Alle Typen" : typeFilter, typeRect.contains(mx, my));
-			String sortLabel = view == View.CONTAINERS ? CONTAINER_SORT_LABELS.get(containerSortIndex)
-					: SORT_LABELS.get(sortIndex);
+			drawDropdown(g, typeRect, typeFilter.isEmpty() ? Lang.t("Alle Typen", "All types") : typeFilter,
+					typeRect.contains(mx, my));
+			String sortLabel = view == View.CONTAINERS ? containerSortLabels().get(containerSortIndex)
+					: sortLabels().get(sortIndex);
 			drawDropdown(g, sortRect, "Sort: " + sortLabel, sortRect.contains(mx, my));
 		}
 
@@ -991,18 +1046,25 @@ public class IndexScreen extends Screen {
 		g.fill(panel.x() + PAD, prevRect.y() - 3, panel.x() + PANEL_W - PAD, prevRect.y() - 2, BORDER);
 		drawSmallButton(g, prevRect, "<", activePage() > 0, prevRect.contains(mx, my));
 		drawSmallButton(g, nextRect, ">", activePage() < maxPage(), nextRect.contains(mx, my));
-		String pageText = "Seite " + (activePage() + 1) + " von " + (maxPage() + 1);
+		String pageText = Lang.t("Seite " + (activePage() + 1) + " von " + (maxPage() + 1),
+				"Page " + (activePage() + 1) + " of " + (maxPage() + 1));
 		String info = switch (view) {
-			case ITEMS -> hits.isEmpty() ? "Keine Treffer. Öffne Kisten, damit sie erfasst werden."
-					: hits.size() + " Treffer  ·  " + pageText;
-			case CONTAINERS -> containerHits.isEmpty() ? "Keine Container. Öffne Kisten, damit sie erfasst werden."
-					: containerHits.size() + " Container  ·  " + pageText;
-			case DETAIL -> detailItems.isEmpty() ? "Keine Items gespeichert. Öffne den Container erneut."
-					: ChestStore.distinctItems(detailEntry) + " Item-Arten  ·  "
-							+ ChestStore.totalCount(detailEntry) + " gesamt  ·  " + pageText;
+			case ITEMS -> hits.isEmpty()
+					? Lang.t("Keine Treffer. Öffne Kisten, damit sie erfasst werden.",
+							"No results. Open containers so they get recorded.")
+					: hits.size() + Lang.t(" Treffer", " results") + "  ·  " + pageText;
+			case CONTAINERS -> containerHits.isEmpty()
+					? Lang.t("Keine Container. Öffne Kisten, damit sie erfasst werden.",
+							"No containers. Open containers so they get recorded.")
+					: containerHits.size() + Lang.t(" Container", " containers") + "  ·  " + pageText;
+			case DETAIL -> detailItems.isEmpty()
+					? Lang.t("Keine Items gespeichert. Öffne den Container erneut.",
+							"No items stored. Open the container again.")
+					: ChestStore.distinctItems(detailEntry) + Lang.t(" Item-Arten", " item types") + "  ·  "
+							+ ChestStore.totalCount(detailEntry) + Lang.t(" gesamt", " total") + "  ·  " + pageText;
 		};
-		g.text(this.font, fit(info, nextRect.x() - prevRect.x() - prevRect.w() - 12),
-				panel.x() + PANEL_W / 2 - Math.min(this.font.width(info), nextRect.x() - prevRect.x() - prevRect.w() - 12) / 2,
+		int infoSpace = nextRect.x() - prevRect.x() - prevRect.w() - 12;
+		g.text(this.font, fit(info, infoSpace), panel.x() + PANEL_W / 2 - Math.min(this.font.width(info), infoSpace) / 2,
 				prevRect.y() + 7, MUTED, true);
 
 		// Tooltips
@@ -1016,10 +1078,15 @@ public class IndexScreen extends Screen {
 				g.setComponentTooltipForNextFrame(this.font, lines, mouseX, mouseY);
 			} else if (view != View.DETAIL && searchRect.contains(mouseX, mouseY)) {
 				g.setComponentTooltipForNextFrame(this.font, List.of(
-						Component.literal("Suche nach Item, Verzauberung oder Shulker-Name"),
-						Component.literal("In der Container-Ansicht auch nach dem Container-Namen"),
-						Component.literal("Mehrere Wörter: alle müssen passen"),
-						Component.literal("<30% oder >80% filtert nach Haltbarkeit")), mouseX, mouseY);
+						Component.literal(Lang.t("Suche nach Item, Verzauberung oder Shulker-Name",
+								"Search by item, enchantment or shulker name")),
+						Component.literal(Lang.t("In der Container-Ansicht auch nach dem Container-Namen",
+								"In the container view also by container name")),
+						Component.literal(Lang.t("Mehrere Wörter: alle müssen passen",
+								"Several words: all of them must match")),
+						Component.literal(Lang.t("<30% oder >80% filtert nach Haltbarkeit",
+								"<30% or >80% filters by durability"))),
+						mouseX, mouseY);
 			}
 		}
 
@@ -1050,11 +1117,14 @@ public class IndexScreen extends Screen {
 			g.nextStratum();
 			g.fill(0, 0, this.width, this.height, 0x99000000);
 			roundBox(g, dialogRect, ACCENT, 0xFF0F1626);
-			g.text(this.font, "§lContainer umbenennen", dialogRect.x() + 12, dialogRect.y() + 12, TEXT, true);
+			g.text(this.font, "§l" + Lang.t("Container umbenennen", "Rename container"), dialogRect.x() + 12,
+					dialogRect.y() + 12, TEXT, true);
 			roundBox(g, renameFieldRect, renameBox.isFocused() ? ACCENT : FIELD_BORDER, FIELD);
 			renameBox.extractRenderState(g, mouseX, mouseY, delta);
-			drawSmallButton(g, dialogSaveRect, "Speichern", true, dialogSaveRect.contains(mouseX, mouseY));
-			drawSmallButton(g, dialogCancelRect, "Abbrechen", true, dialogCancelRect.contains(mouseX, mouseY));
+			drawSmallButton(g, dialogSaveRect, Lang.t("Speichern", "Save"), true,
+					dialogSaveRect.contains(mouseX, mouseY));
+			drawSmallButton(g, dialogCancelRect, Lang.t("Abbrechen", "Cancel"), true,
+					dialogCancelRect.contains(mouseX, mouseY));
 		}
 	}
 }

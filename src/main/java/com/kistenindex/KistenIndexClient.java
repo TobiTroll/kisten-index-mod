@@ -158,7 +158,8 @@ public class KistenIndexClient implements ClientModInitializer {
 				if (HighlightState.get() != null) {
 					HighlightState.clear();
 					if (client.player != null) {
-						client.player.sendSystemMessage(Component.literal("Kisten-Index: Markierung entfernt"));
+						client.player.sendSystemMessage(Component.literal(
+								Lang.t("Kisten-Index: Markierung entfernt", "Chest Index: marker removed")));
 					}
 				}
 			}

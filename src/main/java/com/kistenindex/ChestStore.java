@@ -320,7 +320,7 @@ public final class ChestStore {
 
 	// ---- Anzeige-Hilfen für Container ----
 
-	/** Automatischer Name, z. B. "Kiste #12". */
+	/** Automatischer Name, z. B. "Kiste #12" bzw. "Chest #12". */
 	public static String defaultName(Entry e) {
 		return typeLabel(e.type) + " #" + Math.max(1, e.number);
 	}
@@ -548,25 +548,26 @@ public final class ChestStore {
 		return new ArrayList<>(set);
 	}
 
+	/** Anzeigename des Containertyps in der eingestellten Sprache. */
 	public static String typeLabel(String blockPath) {
 		if (blockPath == null) {
 			return "Container";
 		}
 		if (blockPath.contains("shulker_box")) {
-			return "Shulkerbox";
+			return Lang.t("Shulkerbox", "Shulker box");
 		}
 		return switch (blockPath) {
-			case "chest" -> "Kiste";
-			case "trapped_chest" -> "Redstone-Kiste";
-			case "double_chest" -> "Doppelkiste";
-			case "double_trapped_chest" -> "Doppel-Redstone-Kiste";
-			case "barrel" -> "Fass";
-			case "ender_chest" -> "Endertruhe";
-			case "dispenser" -> "Spender";
-			case "dropper" -> "Werfer";
-			case "furnace" -> "Ofen";
-			case "blast_furnace" -> "Hochofen";
-			case "smoker" -> "Räucherofen";
+			case "chest" -> Lang.t("Kiste", "Chest");
+			case "trapped_chest" -> Lang.t("Redstone-Kiste", "Trapped chest");
+			case "double_chest" -> Lang.t("Doppelkiste", "Double chest");
+			case "double_trapped_chest" -> Lang.t("Doppel-Redstone-Kiste", "Double trapped chest");
+			case "barrel" -> Lang.t("Fass", "Barrel");
+			case "ender_chest" -> Lang.t("Endertruhe", "Ender chest");
+			case "dispenser" -> Lang.t("Spender", "Dispenser");
+			case "dropper" -> Lang.t("Werfer", "Dropper");
+			case "furnace" -> Lang.t("Ofen", "Furnace");
+			case "blast_furnace" -> Lang.t("Hochofen", "Blast furnace");
+			case "smoker" -> Lang.t("Räucherofen", "Smoker");
 			default -> "Container";
 		};
 	}
@@ -582,14 +583,15 @@ public final class ChestStore {
 		return typeLabel(blockPath);
 	}
 
+	/** Anzeigename der Dimension in der eingestellten Sprache. */
 	public static String dimensionLabel(String dimensionId) {
 		if (dimensionId == null) {
 			return "?";
 		}
 		return switch (dimensionId) {
-			case "minecraft:overworld" -> "Oberwelt";
+			case "minecraft:overworld" -> Lang.t("Oberwelt", "Overworld");
 			case "minecraft:the_nether" -> "Nether";
-			case "minecraft:the_end" -> "Ende";
+			case "minecraft:the_end" -> Lang.t("Ende", "The End");
 			default -> dimensionId;
 		};
 	}
@@ -598,14 +600,14 @@ public final class ChestStore {
 	public static String ageText(long updated) {
 		long seconds = Math.max(0, (System.currentTimeMillis() - updated) / 1000);
 		if (seconds < 60) {
-			return "gerade eben";
+			return Lang.t("gerade eben", "just now");
 		}
 		if (seconds < 3600) {
-			return "vor " + (seconds / 60) + " Min.";
+			return Lang.t("vor " + (seconds / 60) + " Min.", (seconds / 60) + " min ago");
 		}
 		if (seconds < 86400) {
-			return "vor " + (seconds / 3600) + " Std.";
+			return Lang.t("vor " + (seconds / 3600) + " Std.", (seconds / 3600) + " h ago");
 		}
-		return "vor " + (seconds / 86400) + " Tg.";
+		return Lang.t("vor " + (seconds / 86400) + " Tg.", (seconds / 86400) + " d ago");
 	}
 }
