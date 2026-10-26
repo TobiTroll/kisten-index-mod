@@ -30,6 +30,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,8 +46,10 @@ public class KistenIndexClient implements ClientModInitializer {
 	private static KeyMapping openKey;
 	private static KeyMapping clearKey;
 
-	// Zuletzt angeklickter Block (wird beim Öffnen eines Containers gebraucht)
+	// Zuletzt angeklickter Block (wird beim Öffnen eines Containers gebraucht). Bei Doppelkisten ist lastPos
+	// immer dieselbe Hälfte, egal welche angeklickt wurde, lastMerge ist die andere Hälfte.
 	private static BlockPos lastPos;
+	private static BlockPos lastMerge;
 	private static String lastDim;
 	private static String lastBlock;
 	private static long lastClickTime;
@@ -52,6 +57,7 @@ public class KistenIndexClient implements ClientModInitializer {
 	// Aktuell geöffneter, unterstützter Container
 	private static AbstractContainerScreen<?> activeScreen;
 	private static BlockPos activePos;
+	private static BlockPos activeMerge;
 	private static String activeDim;
 	private static String activeBlock;
 	private static int tickCounter;
@@ -79,9 +85,26 @@ public class KistenIndexClient implements ClientModInitializer {
 		UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
 			if (level.isClientSide()) {
 				BlockPos pos = hitResult.getBlockPos();
+				BlockState state = level.getBlockState(pos);
+				String blockPath = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+				BlockPos merge = null;
+
+				// Doppelkiste: beide Hälften werden auf dieselbe Position (die kleinere) zusammengefasst.
+				if (state.getBlock() instanceof ChestBlock && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
+					BlockPos other = ChestBlock.getConnectedBlockPos(pos, state);
+					if (pos.compareTo(other) <= 0) {
+						merge = other;
+					} else {
+						merge = pos;
+						pos = other;
+					}
+					blockPath = "double_" + blockPath;
+				}
+
 				lastPos = pos;
+				lastMerge = merge;
 				lastDim = level.dimension().identifier().toString();
-				lastBlock = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).getPath();
+				lastBlock = blockPath;
 				lastClickTime = System.currentTimeMillis();
 			}
 			return InteractionResult.PASS;
@@ -103,6 +126,7 @@ public class KistenIndexClient implements ClientModInitializer {
 			}
 			activeScreen = containerScreen;
 			activePos = lastPos;
+			activeMerge = lastMerge;
 			activeDim = lastDim;
 			activeBlock = lastBlock;
 			tickCounter = 0;
@@ -167,7 +191,7 @@ public class KistenIndexClient implements ClientModInitializer {
 				contents.nonEmptyItemCopyStream().forEach(inner -> addStack(merged, inner, shulkerName));
 			}
 		}
-		ChestStore.update(client, activeDim, activePos, activeBlock, new ArrayList<>(merged.values()));
+		ChestStore.update(client, activeDim, activePos, activeMerge, activeBlock, new ArrayList<>(merged.values()));
 	}
 
 	private static void addStack(Map<String, ChestStore.ItemInfo> merged, ItemStack stack, String container) {

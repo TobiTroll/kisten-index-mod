@@ -89,13 +89,14 @@ public final class ChestStore {
 
 	/**
 	 * Ein erfasster Container. Er wird eindeutig durch Dimension und Blockkoordinaten bestimmt; der eigene Name
-	 * und die laufende Nummer hängen daran.
+	 * und die laufende Nummer hängen daran. Bei Doppelkisten ist das die kleinere der beiden Positionen.
 	 */
 	public static final class Entry {
 		public String dimension;
 		public int x;
 		public int y;
 		public int z;
+		/** Blockname, bei Doppelkisten mit Vorsatz "double_", z. B. "double_chest". */
 		public String type;
 		public long updated;
 		public boolean pinned;
@@ -116,6 +117,7 @@ public final class ChestStore {
 	private static final Type LIST_TYPE = new TypeToken<List<Entry>>() {
 	}.getType();
 	private static final Pattern DURABILITY = Pattern.compile("^([<>])(\\d{1,3})%?$");
+	private static final String DOUBLE_PREFIX = "double_";
 
 	private static List<Entry> entries = new ArrayList<>();
 	private static String loadedKey = null;
@@ -227,20 +229,50 @@ public final class ChestStore {
 		return true;
 	}
 
-	/** Legt einen Container neu an oder aktualisiert ihn. Speichert nur bei Änderungen. */
-	public static synchronized void update(Minecraft client, String dimension, BlockPos pos, String type,
-			List<ItemInfo> items) {
+	private static Entry find(String dimension, BlockPos pos) {
+		for (Entry e : entries) {
+			if (e.dimension.equals(dimension) && e.x == pos.getX() && e.y == pos.getY() && e.z == pos.getZ()) {
+				return e;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Legt einen Container neu an oder aktualisiert ihn. Speichert nur bei Änderungen. Für Doppelkisten ist pos
+	 * die kleinere Position und mergePos die zweite Hälfte (sonst null). Wurde die zweite Hälfte in einer
+	 * älteren Version als eigener Eintrag erfasst, wird sie hier mit dem Eintrag der Doppelkiste zusammengeführt;
+	 * Name und Pin bleiben erhalten.
+	 */
+	public static synchronized void update(Minecraft client, String dimension, BlockPos pos, BlockPos mergePos,
+			String type, List<ItemInfo> items) {
 		if (!ensureLoaded(client)) {
 			return;
 		}
-		Entry existing = null;
-		for (Entry e : entries) {
-			if (e.dimension.equals(dimension) && e.x == pos.getX() && e.y == pos.getY() && e.z == pos.getZ()) {
-				existing = e;
-				break;
+		Entry existing = find(dimension, pos);
+		boolean merged = false;
+		if (mergePos != null) {
+			Entry other = find(dimension, mergePos);
+			if (other != null) {
+				if (existing == null) {
+					// Der alte Eintrag der anderen Hälfte wird zum Eintrag der Doppelkiste.
+					other.x = pos.getX();
+					other.y = pos.getY();
+					other.z = pos.getZ();
+					existing = other;
+				} else {
+					if (!hasCustomName(existing) && hasCustomName(other)) {
+						existing.name = other.name;
+					}
+					if (other.pinned) {
+						existing.pinned = true;
+					}
+					entries.remove(other);
+				}
+				merged = true;
 			}
 		}
-		if (existing != null && sameItems(existing.items, items)) {
+		if (existing != null && !merged && Objects.equals(existing.type, type) && sameItems(existing.items, items)) {
 			return;
 		}
 		if (existing == null) {
@@ -249,9 +281,11 @@ public final class ChestStore {
 			existing.x = pos.getX();
 			existing.y = pos.getY();
 			existing.z = pos.getZ();
-			existing.type = type;
 			existing.number = nextNumber(type);
 			entries.add(existing);
+		} else if (!typeLabel(existing.type).equals(typeLabel(type))) {
+			// Aus einer Kiste wurde z. B. eine Doppelkiste: neue Nummer innerhalb des neuen Typs.
+			existing.number = nextNumber(type);
 		}
 		existing.type = type;
 		existing.items = items;
@@ -320,7 +354,11 @@ public final class ChestStore {
 
 	/** Item-ID, deren Icon den Container darstellt (der Blockname entspricht dem Item). */
 	public static String iconId(Entry e) {
-		return "minecraft:" + (e.type == null ? "chest" : e.type);
+		String type = e.type == null ? "chest" : e.type;
+		if (type.startsWith(DOUBLE_PREFIX)) {
+			type = type.substring(DOUBLE_PREFIX.length());
+		}
+		return "minecraft:" + type;
 	}
 
 	// ---- Suche ----
@@ -441,7 +479,7 @@ public final class ChestStore {
 			if (!dimFilter.isEmpty() && !dimFilter.equals(e.dimension)) {
 				continue;
 			}
-			if (!typeFilter.isEmpty() && !typeFilter.equals(typeLabel(e.type))) {
+			if (!typeFilter.isEmpty() && !typeFilter.equals(filterLabel(e.type))) {
 				continue;
 			}
 			for (ItemInfo item : e.items) {
@@ -477,7 +515,7 @@ public final class ChestStore {
 			if (!dimFilter.isEmpty() && !dimFilter.equals(e.dimension)) {
 				continue;
 			}
-			if (!typeFilter.isEmpty() && !typeFilter.equals(typeLabel(e.type))) {
+			if (!typeFilter.isEmpty() && !typeFilter.equals(filterLabel(e.type))) {
 				continue;
 			}
 			if (containerMatches(e, tokens)) {
@@ -520,6 +558,8 @@ public final class ChestStore {
 		return switch (blockPath) {
 			case "chest" -> "Kiste";
 			case "trapped_chest" -> "Redstone-Kiste";
+			case "double_chest" -> "Doppelkiste";
+			case "double_trapped_chest" -> "Doppel-Redstone-Kiste";
 			case "barrel" -> "Fass";
 			case "ender_chest" -> "Endertruhe";
 			case "dispenser" -> "Spender";
@@ -529,6 +569,17 @@ public final class ChestStore {
 			case "smoker" -> "Räucherofen";
 			default -> "Container";
 		};
+	}
+
+	/**
+	 * Name des Typ-Filters: Doppelkisten fallen unter denselben Filter wie die einfachen Kisten ("Kiste" bzw.
+	 * "Redstone-Kiste").
+	 */
+	public static String filterLabel(String blockPath) {
+		if (blockPath != null && blockPath.startsWith(DOUBLE_PREFIX)) {
+			return typeLabel(blockPath.substring(DOUBLE_PREFIX.length()));
+		}
+		return typeLabel(blockPath);
 	}
 
 	public static String dimensionLabel(String dimensionId) {
