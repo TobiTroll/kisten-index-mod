@@ -9,18 +9,19 @@ Kiste, Redstone-Kiste, Endertruhe, Fass, Shulkerbox, Spender, Werfer, Ofen, Hoch
 ## Bedienung
 
 - Taste **K** (in den Steuerungs-Einstellungen änderbar) öffnet den Kisten-Index.
-- **Suche:** Jedes Wort muss passen, im Item-Namen, in den Verzauberungen oder im Namen der Shulkerbox. Beispiele: `diamant`, `schärfe`, `schwert schärfe`. Mit `<30%` oder `>80%` filterst du nach restlicher Haltbarkeit, z. B. `spitzhacke <30%`.
-- **Dropdowns:** Dimension, Containertyp und Sortierung (Entfernung, Menge, Alter, Name A-Z). Angepinnte Container stehen immer oben.
+- **Umschalter oben:** "Items" (Standard) zeigt einzelne Items, "Container" zeigt jeden Container genau einmal. Der Wechsel schließt die GUI nicht.
+- **Suche:** Jedes Wort muss passen, im Item-Namen, in den Verzauberungen oder im Namen der Shulkerbox. In der Container-Ansicht zählen auch der Container-Name, der Typ und die Inhalte. Mit `<30%` oder `>80%` filterst du nach restlicher Haltbarkeit.
+- **Dropdowns:** Dimension, Containertyp und Sortierung. Items: Entfernung, Menge, Alter, Name A-Z. Container: Entfernung, Alter, Name A-Z, Item-Arten, Gesamtmenge. Angepinnte Container stehen immer oben.
 - **Zahnrad oben rechts:** Shulker-Inhalt an/aus, Filter zurücksetzen.
-- **Treffer:** Icon, Name, Menge, Typ und Dimension; die Koordinaten stehen rechts in einer Kapsel. Verzauberte Items sind lila, die restliche Haltbarkeit ist grün, gelb oder rot. Mauszeiger darauf zeigt Details und wann der Container zuletzt gesehen wurde.
-- **Linksklick** auf einen Treffer markiert den Container: gelber Rahmen mit Entfernung auf dem Bildschirm, auch durch Wände. Außerhalb des Bildes zeigt ein Marker am Rand die Richtung.
-- **Rechtsklick** auf einen Treffer öffnet ein Menü: Markieren, Anpinnen bzw. Pin entfernen, Container vergessen.
+- **Item-Ansicht:** Linksklick markiert den Container, Rechtsklick öffnet Markieren, Anpinnen, Container vergessen.
+- **Container-Ansicht:** Jede Zeile zeigt Icon, Name, Typ, Dimension, eine Inhaltsübersicht und die Koordinaten. Einen Namen vergibst du per Rechtsklick auf "Umbenennen". Ohne eigenen Namen heißt ein Container z. B. "Kiste #12". Der Name gilt nur in der Mod und bleibt dauerhaft gespeichert.
+- **Detailansicht:** Linksklick auf einen Container zeigt alle gespeicherten Items mit Icon, Name und Menge. Oben stehen Name, Typ, Dimension und Koordinaten mit den Aktionen "Hervorheben", "Koordinaten kopieren" und "Umbenennen". "Zurück" (oder ESC) führt zur Containerliste, Suche, Filter, Sortierung und Seite bleiben erhalten.
 - Die Markierung verschwindet, wenn du den Container öffnest, oder mit der Taste **J** (änderbar).
 - Beim erneuten Öffnen eines Containers wird sein Eintrag aktualisiert.
 
 ## Speicherort
 
-Die Daten liegen pro Welt bzw. Server als JSON-Datei im Ordner `config/kistenindex/`.
+Die Daten liegen pro Welt bzw. Server als JSON-Datei im Ordner `config/kistenindex/`. Ein Container wird eindeutig durch Dimension und Blockkoordinaten bestimmt; sein eigener Name hängt daran.
 
 ## Installation
 

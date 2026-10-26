@@ -14,9 +14,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,6 +39,11 @@ public final class ChestStore {
 		public SortMode next() {
 			return values()[(ordinal() + 1) % values().length];
 		}
+	}
+
+	/** Sortierung der Container-Ansicht. */
+	public enum ContainerSort {
+		DISTANCE, AGE, NAME, VARIETY, TOTAL
 	}
 
 	public static final class ItemInfo {
@@ -78,6 +87,10 @@ public final class ChestStore {
 		}
 	}
 
+	/**
+	 * Ein erfasster Container. Er wird eindeutig durch Dimension und Blockkoordinaten bestimmt; der eigene Name
+	 * und die laufende Nummer hängen daran.
+	 */
 	public static final class Entry {
 		public String dimension;
 		public int x;
@@ -86,10 +99,17 @@ public final class ChestStore {
 		public String type;
 		public long updated;
 		public boolean pinned;
+		/** Eigener Name, nur in der Mod sichtbar; null oder leer, wenn keiner vergeben wurde. */
+		public String name;
+		/** Laufende Nummer je Containertyp für den automatischen Namen, z. B. "Kiste #12". */
+		public int number;
 		public List<ItemInfo> items = new ArrayList<>();
 	}
 
 	public record Hit(Entry entry, ItemInfo item) {
+	}
+
+	private record PlayerPos(double x, double y, double z, String dimension) {
 	}
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -143,6 +163,10 @@ public final class ChestStore {
 			}
 		}
 		loadedKey = key;
+		// Einträge aus älteren Versionen haben noch keine laufende Nummer.
+		if (assignMissingNumbers()) {
+			save();
+		}
 		return true;
 	}
 
@@ -157,6 +181,38 @@ public final class ChestStore {
 		} catch (IOException e) {
 			KistenIndexClient.LOGGER.warn("Kisten-Index konnte nicht gespeichert werden", e);
 		}
+	}
+
+	/** Vergibt Nummern an Einträge ohne Nummer, getrennt nach Containertyp. */
+	private static boolean assignMissingNumbers() {
+		Map<String, Integer> highest = new HashMap<>();
+		for (Entry e : entries) {
+			if (e.number > 0) {
+				highest.merge(typeLabel(e.type), e.number, Math::max);
+			}
+		}
+		boolean changed = false;
+		for (Entry e : entries) {
+			if (e.number <= 0) {
+				String label = typeLabel(e.type);
+				int next = highest.getOrDefault(label, 0) + 1;
+				highest.put(label, next);
+				e.number = next;
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	private static int nextNumber(String type) {
+		String label = typeLabel(type);
+		int highest = 0;
+		for (Entry e : entries) {
+			if (typeLabel(e.type).equals(label)) {
+				highest = Math.max(highest, e.number);
+			}
+		}
+		return highest + 1;
 	}
 
 	private static boolean sameItems(List<ItemInfo> a, List<ItemInfo> b) {
@@ -193,6 +249,8 @@ public final class ChestStore {
 			existing.x = pos.getX();
 			existing.y = pos.getY();
 			existing.z = pos.getZ();
+			existing.type = type;
+			existing.number = nextNumber(type);
 			entries.add(existing);
 		}
 		existing.type = type;
@@ -216,6 +274,57 @@ public final class ChestStore {
 		}
 	}
 
+	/** Vergibt einen eigenen Namen. Ein leerer Name stellt den automatischen Namen wieder her. */
+	public static synchronized void rename(Minecraft client, Entry entry, String name) {
+		if (!ensureLoaded(client)) {
+			return;
+		}
+		String trimmed = name == null ? "" : name.trim();
+		entry.name = trimmed.isEmpty() ? null : trimmed;
+		save();
+	}
+
+	// ---- Anzeige-Hilfen für Container ----
+
+	/** Automatischer Name, z. B. "Kiste #12". */
+	public static String defaultName(Entry e) {
+		return typeLabel(e.type) + " #" + Math.max(1, e.number);
+	}
+
+	public static boolean hasCustomName(Entry e) {
+		return e.name != null && !e.name.isBlank();
+	}
+
+	/** Eigener Name, sonst der automatische Name. */
+	public static String displayName(Entry e) {
+		return hasCustomName(e) ? e.name : defaultName(e);
+	}
+
+	/** Anzahl verschiedener Item-Arten im gespeicherten Inhalt. */
+	public static int distinctItems(Entry e) {
+		Set<String> ids = new HashSet<>();
+		for (ItemInfo item : e.items) {
+			ids.add(item.id);
+		}
+		return ids.size();
+	}
+
+	/** Gesamtmenge aller gespeicherten Items. */
+	public static int totalCount(Entry e) {
+		int total = 0;
+		for (ItemInfo item : e.items) {
+			total += item.count;
+		}
+		return total;
+	}
+
+	/** Item-ID, deren Icon den Container darstellt (der Blockname entspricht dem Item). */
+	public static String iconId(Entry e) {
+		return "minecraft:" + (e.type == null ? "chest" : e.type);
+	}
+
+	// ---- Suche ----
+
 	private static String nullToEmpty(String text) {
 		return text == null ? "" : text;
 	}
@@ -223,6 +332,28 @@ public final class ChestStore {
 	private static String haystack(ItemInfo item) {
 		return (nullToEmpty(item.name) + " " + nullToEmpty(item.id) + " " + nullToEmpty(item.enchants) + " "
 				+ nullToEmpty(item.container)).toLowerCase(Locale.ROOT);
+	}
+
+	private static List<String> tokens(String query) {
+		List<String> tokens = new ArrayList<>();
+		if (query != null) {
+			for (String token : query.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
+				if (!token.isEmpty()) {
+					tokens.add(token);
+				}
+			}
+		}
+		return tokens;
+	}
+
+	/** Prüft ein Haltbarkeits-Wort wie "<30%" oder ">80%" gegen ein Item. */
+	private static boolean durabilityMatches(ItemInfo item, Matcher m) {
+		int pct = item.durabilityPercent();
+		if (pct < 0) {
+			return false;
+		}
+		int limit = Integer.parseInt(m.group(2));
+		return m.group(1).equals("<") ? pct < limit : pct > limit;
 	}
 
 	/**
@@ -233,13 +364,7 @@ public final class ChestStore {
 		for (String token : tokens) {
 			Matcher m = DURABILITY.matcher(token);
 			if (m.matches()) {
-				int pct = item.durabilityPercent();
-				if (pct < 0) {
-					return false;
-				}
-				int limit = Integer.parseInt(m.group(2));
-				boolean ok = m.group(1).equals("<") ? pct < limit : pct > limit;
-				if (!ok) {
+				if (!durabilityMatches(item, m)) {
 					return false;
 				}
 				continue;
@@ -251,6 +376,59 @@ public final class ChestStore {
 		return true;
 	}
 
+	/**
+	 * Ein Container passt, wenn jedes Suchwort zu seinem Namen, Typ, seiner Dimension oder zu mindestens einem
+	 * gespeicherten Item passt.
+	 */
+	private static boolean containerMatches(Entry e, List<String> tokens) {
+		String base = (displayName(e) + " " + typeLabel(e.type) + " " + dimensionLabel(e.dimension))
+				.toLowerCase(Locale.ROOT);
+		for (String token : tokens) {
+			Matcher m = DURABILITY.matcher(token);
+			boolean found = false;
+			if (m.matches()) {
+				for (ItemInfo item : e.items) {
+					if (durabilityMatches(item, m)) {
+						found = true;
+						break;
+					}
+				}
+			} else if (base.contains(token)) {
+				found = true;
+			} else {
+				for (ItemInfo item : e.items) {
+					if (haystack(item).contains(token)) {
+						found = true;
+						break;
+					}
+				}
+			}
+			if (!found) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static PlayerPos playerPos(Minecraft client) {
+		if (client.player == null) {
+			return null;
+		}
+		return new PlayerPos(client.player.getX(), client.player.getY(), client.player.getZ(),
+				client.player.level().dimension().identifier().toString());
+	}
+
+	/** Quadrat der Entfernung zum Spieler; Container in anderen Dimensionen kommen ans Ende. */
+	private static double distanceSq(Entry e, PlayerPos p) {
+		if (p == null || !p.dimension().equals(e.dimension)) {
+			return 1.0e18;
+		}
+		double dx = e.x - p.x();
+		double dy = e.y - p.y();
+		double dz = e.z - p.z();
+		return dx * dx + dy * dy + dz * dz;
+	}
+
 	/** Sucht Items und sortiert die Treffer. Angepinnte Container stehen immer oben. */
 	public static synchronized List<Hit> search(Minecraft client, String query, String dimFilter, String typeFilter,
 			boolean includeNested, SortMode sort) {
@@ -258,14 +436,7 @@ public final class ChestStore {
 		if (!ensureLoaded(client)) {
 			return hits;
 		}
-		List<String> tokens = new ArrayList<>();
-		if (query != null) {
-			for (String token : query.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
-				if (!token.isEmpty()) {
-					tokens.add(token);
-				}
-			}
-		}
+		List<String> tokens = tokens(query);
 		for (Entry e : entries) {
 			if (!dimFilter.isEmpty() && !dimFilter.equals(e.dimension)) {
 				continue;
@@ -283,39 +454,48 @@ public final class ChestStore {
 			}
 		}
 
-		final double px;
-		final double py;
-		final double pz;
-		final String pdim;
-		if (client.player != null) {
-			px = client.player.getX();
-			py = client.player.getY();
-			pz = client.player.getZ();
-			pdim = client.player.level().dimension().identifier().toString();
-		} else {
-			px = 0;
-			py = 0;
-			pz = 0;
-			pdim = null;
-		}
-
+		final PlayerPos pos = playerPos(client);
 		Comparator<Hit> order = switch (sort) {
 			case AMOUNT -> Comparator.comparingInt((Hit h) -> h.item().count).reversed();
 			case AGE -> Comparator.comparingLong((Hit h) -> h.entry().updated).reversed();
-			default -> Comparator.comparingDouble((Hit h) -> {
-				Entry e = h.entry();
-				if (pdim == null || !pdim.equals(e.dimension)) {
-					return 1.0e18;
-				}
-				double dx = e.x - px;
-				double dy = e.y - py;
-				double dz = e.z - pz;
-				return dx * dx + dy * dy + dz * dz;
-			});
+			default -> Comparator.comparingDouble((Hit h) -> distanceSq(h.entry(), pos));
 		};
 		Comparator<Hit> pinnedFirst = Comparator.comparing((Hit h) -> !h.entry().pinned);
 		hits.sort(pinnedFirst.thenComparing(order));
 		return hits;
+	}
+
+	/** Liefert jeden passenden Container genau einmal. Angepinnte Container stehen immer oben. */
+	public static synchronized List<Entry> searchContainers(Minecraft client, String query, String dimFilter,
+			String typeFilter, ContainerSort sort) {
+		List<Entry> result = new ArrayList<>();
+		if (!ensureLoaded(client)) {
+			return result;
+		}
+		List<String> tokens = tokens(query);
+		for (Entry e : entries) {
+			if (!dimFilter.isEmpty() && !dimFilter.equals(e.dimension)) {
+				continue;
+			}
+			if (!typeFilter.isEmpty() && !typeFilter.equals(typeLabel(e.type))) {
+				continue;
+			}
+			if (containerMatches(e, tokens)) {
+				result.add(e);
+			}
+		}
+
+		final PlayerPos pos = playerPos(client);
+		Comparator<Entry> order = switch (sort) {
+			case AGE -> Comparator.comparingLong((Entry e) -> e.updated).reversed();
+			case NAME -> Comparator.comparing((Entry e) -> displayName(e), String.CASE_INSENSITIVE_ORDER);
+			case VARIETY -> Comparator.comparingInt((Entry e) -> distinctItems(e)).reversed();
+			case TOTAL -> Comparator.comparingInt((Entry e) -> totalCount(e)).reversed();
+			default -> Comparator.comparingDouble((Entry e) -> distanceSq(e, pos));
+		};
+		Comparator<Entry> pinnedFirst = Comparator.comparing((Entry e) -> !e.pinned);
+		result.sort(pinnedFirst.thenComparing(order));
+		return result;
 	}
 
 	/** Alle Dimensionen, in denen bereits Container erfasst wurden. */
